@@ -1,1 +1,214 @@
 # Diffusion_HW_Hindi
+
+# Diffusion_HW_Hindi — Devanagari Handwriting Generation
+
+A DiffBrush-style latent diffusion model that generates realistic **Devanagari (Hindi) handwriting** in a target writer's style from arbitrary input text.
+
+## Table of Content
+  * [Demo](#-demo)
+  * [Overview](#overview)
+  * [Motivation](#motivation)
+  * [Technical Aspect](#technical-aspect)
+  * [Installation](#installation)
+  * [Inference](#inference)
+  * [Pretrained Weights](#pretrained-weights)
+  * [Training](#training)
+  * [Dataset & Latent Preparation](#dataset--latent-preparation)
+  * [Technologies Used](#technologies-used)
+  * [Team](#team)
+  * [License](#license)
+  * [Credits](#credits)
+
+## 🎬 Demo
+
+Two ways to try the model — pick whichever fits what you need:
+
+<a href="https://huggingface.co/spaces/keysun89/HW_Hindi_Demo" target="_blank">
+  <img align="right" src="https://huggingface.co/datasets/huggingface/brand-assets/resolve/main/hf-logo-with-title.png" width="150" alt="Try it on Hugging Face">
+</a>
+
+**1. Hugging Face Space** 👉 **[Launch Demo](https://huggingface.co/spaces/keysun89/HW_Hindi_Demo)**
+Runs on free CPU hardware, so a single generation (1000 denoising steps) can take a couple of minutes — good for a quick, no-setup preview.
+
+**2. Google Colab (recommended — GPU, much faster)** 👉 **[Open In Colab](https://colab.research.google.com/github/keysun8/Diffusion_HW_Hindi/blob/main/Diffusion_HW_Hindi_Inference.ipynb)**
+Runs the same inference pipeline on a free Colab GPU. Clones this repo, downloads the checkpoint and VAE automatically, and lets you type any English (auto-transliterated) or Devanagari text.
+
+<p align="center">
+  <img src="https://github.com/keysun8/Diffusion_HW_Hindi/raw/main/assets/demo.png" alt="Devanagari Handwriting Generation Demo" width="700">
+</p>
+<p align="center">
+  <em>Same text, rendered in different writers' handwriting styles by the diffusion model.</em>
+</p>
+
+## Overview
+
+This project generates handwritten-style images of Devanagari text conditioned on **(a)** the text content and **(b)** a reference style image from a target writer. A style encoder splits a writer's handwriting into separate vertical and horizontal style representations, a content encoder renders the target text into a glyph-aware query, and a UNet-based latent diffusion model — conditioned on both through cross-attention — denoises a VAE latent that is decoded back into a full handwriting image.
+
+## Motivation
+
+Most handwriting-generation research targets English or Chinese scripts. Devanagari is comparatively under-explored despite being far more structurally demanding: matras (vowel signs) attach above or below the baseline, consonant clusters form visually fused conjuncts, and correct rendering depends on proper glyph reordering and shaping rather than simple left-to-right character placement. This project adapts a DiffBrush-style content-decoupled diffusion approach — originally built for isolated words/Latin & Chinese scripts — to handle these Devanagari-specific challenges, while exploring writer-conditioned, style-controllable text-line generation as a step beyond static, uncontrollable generative demos like "This Person Does Not Exist."
+
+## Technical Aspect
+
+- **Framework:** Built entirely in PyTorch with a custom training loop (mixed-precision, gradient clipping, dual optimizers) — no high-level trainer abstraction.
+- **Style Encoder:** A MobileNetV2 backbone feeds two parallel branches (`Ver_Style` / `Hor_Style`), each a stack of residual + self-attention blocks, producing full spatial vertical/horizontal style feature maps for conditioning, plus separately masked-and-pooled embeddings used only for metric learning.
+- **Content-decoupled style learning:** Column-wise and row-wise random masking (DiffBrush's core idea) is applied only inside the Proxy-NCA embedding heads — never on the maps that feed the diffusion conditioning — forcing the style embeddings to capture writer identity rather than the specific glyphs in the reference image.
+- **Content Encoder:** Renders input text to an image using a Devanagari TTF font (with RAQM shaping for correct matra/conjunct positioning), then encodes it through a MobileNetV2 backbone + learned positional embedding + self-attention stack into a content query `Q`.
+- **Blender:** Fuses the content query with the vertical and horizontal style maps via sequential cross-attention (content → vertical style → horizontal style), producing the final conditioning signal for the UNet.
+- **Diffusion UNet:** A residual/attention UNet operating in VAE latent space, conditioned on the diffusion timestep (sinusoidal embedding) and the blended style-content signal (cross-attention at every resolution). Uses independent width/height up- and down-sampling to match the wide, short aspect ratio of handwritten text lines.
+- **Losses:** Standard DDPM noise-prediction MSE for the diffusion objective, plus three auxiliary Proxy-NCA losses (vertical style, horizontal style, global) so writer identity is explicitly discriminative in the learned embedding space.
+- **Latent space:** All diffusion happens in a pretrained VAE's latent space (not pixel space), keeping training and sampling compute-efficient.
+- **Sampling:** Standard ancestral DDPM denoising over the full 1000-step schedule, followed by VAE decoding back to an RGB image.
+
+## Installation
+
+The code is written in Python 3.10+. If you don't have Python installed, you can find it [here](https://www.python.org/downloads/). Make sure you have the latest version of `pip` before installing dependencies.
+
+Clone the repository and install the required packages:
+```bash
+git clone https://github.com/keysun8/Diffusion_HW_Hindi.git
+cd Diffusion_HW_Hindi
+pip install -r requirements.txt
+```
+
+A CUDA-enabled GPU is strongly recommended for both training and inference (sampling requires 1000 sequential UNet forward passes), though the scripts fall back to CPU automatically if none is available.
+
+> **Note:** Devanagari shaping (matras, conjuncts) requires Pillow's RAQM layout engine. Modern Pillow wheels on Linux ship with `libraqm` already built in, so no extra system packages are usually needed — if you see incorrectly ordered Devanagari glyphs in the output, that's the signal your Pillow build is missing RAQM support.
+
+## Inference
+
+Download a trained checkpoint (see [Pretrained Weights](#pretrained-weights)) and the VAE, then generate an image:
+```bash
+python inference.py \
+    --ckpt checkpoints/ckpt_epoch_0579.pt \
+    --style_folder sample_images/writer_3 \
+    --font_path NotoSansDevanagari-Regular.ttf \
+    --vae_path ./vae \
+    --text "namaste"
+```
+
+If `--text` is omitted, the script prompts for it interactively. Plain English input is automatically transliterated to Devanagari (ITRANS scheme); native Devanagari text is used as-is.
+
+| Argument | Description | Default |
+|---|---|---|
+| `--ckpt` | Path to a trained checkpoint (`.pt`) | *required* |
+| `--style_folder` | Folder of reference style images to sample from | *required* |
+| `--style_image` | Use one specific style image instead of a random pick from `--style_folder` | `None` |
+| `--text` | Text to render (English/ITRANS or Devanagari) | prompts interactively |
+| `--out_dir` | Directory to save the generated image | `./inference_out` |
+| `--out_name` | Output filename | random `output_img_<N>.png` |
+| `--font_path` | Path to the Devanagari `.ttf` font | see script default |
+| `--vae_path` | Path to the pretrained VAE (local folder or HF repo id) | see script default |
+| `--img_height` / `--img_width` | Style-image resize dimensions | `64` / `1024` |
+| `--seed` | Random seed for reproducible sampling | `None` |
+
+The generated image is saved as a PNG inside `--out_dir`.
+
+## Pretrained Weights
+
+**Checkpoints** are hosted on Hugging Face Hub:
+👉 **[keysun89/HW_Hindi_Model](https://huggingface.co/keysun89/HW_Hindi_Model/tree/main)**
+
+```bash
+huggingface-cli download keysun89/HW_Hindi_Model ckpt_epoch_0579.pt --local-dir checkpoints
+```
+
+**VAE weights** are hosted on Google Drive (too large for a Git repo):
+👉 **[Download VAE folder](https://drive.google.com/drive/folders/1j7OpT5KYCkMf1oXEE9efufgB7lXAk17F)**
+
+```bash
+pip install gdown
+gdown --folder https://drive.google.com/drive/folders/1j7OpT5KYCkMf1oXEE9efufgB7lXAk17F -O ./vae
+```
+
+Point `--ckpt` / `--resume_ckpt` and `--vae_path` at the downloaded locations.
+
+## Training
+
+Train the full model (style encoder, content encoder, blender, diffusion UNet) jointly on pre-encoded handwriting latents:
+```bash
+python train.py \
+    --data_root data/latents/train \
+    --style_base_dir data/style_images/train \
+    --vae_path ./vae \
+    --batch_size 8 \
+    --num_epochs 800 \
+    --checkpoint_every 5
+```
+
+### Resuming training from a checkpoint
+```bash
+python train.py \
+    --data_root data/latents/train \
+    --style_base_dir data/style_images/train \
+    --vae_path ./vae \
+    --resume_ckpt checkpoints/ckpt_epoch_0369.pt \
+    --num_epochs 800
+```
+Model weights, Proxy-NCA heads, the style optimizer, and both AMP scalers are restored exactly. The diffusion optimizer is intentionally re-initialized on resume with a learning-rate split (content encoder/blender train faster than the UNet), so its Adam momentum/variance resets while the underlying weights stay untouched.
+
+| Argument | Description | Default |
+|---|---|---|
+| `--data_root` | Root directory of the latent training dataset (one subfolder per writer) | see script default |
+| `--latent_ext` | File extension of stored latents (`.pt` or `.npy`) | `.pt` |
+| `--vae_path` | Path to the pretrained VAE | see script default |
+| `--batch_size` | Training batch size | `8` |
+| `--num_workers` | DataLoader worker count | `4` |
+| `--num_epochs` | Total number of epochs to train for | `800` |
+| `--checkpoint_every` | Save a checkpoint every N epochs | `5` |
+| `--checkpoint_dir` | Directory to save checkpoints to | `diff_checkpoints_5` |
+| `--resume_ckpt` | Path to a checkpoint `.pt` file to resume training from | `None` |
+| `--style_base_dir` | Base directory of per-writer style-image folders (used for training previews) | see script default |
+| `--font_path` | Path to the Devanagari `.ttf` font used for content rendering | see script default |
+
+Loss curves (`loss_curves.png` — diffusion MSE, vertical/horizontal/global Proxy-NCA) and per-epoch/mid-epoch sample generations are saved automatically as training progresses.
+
+## Dataset & Latent Preparation
+
+Training expects `--data_root` to contain one subfolder per writer:
+```
+data/latents/train/
+├── writer_001/
+│   ├── labels.txt      # one line of ground-truth text per sample, in order
+│   ├── 0.pt            # pre-encoded VAE latent for sample 0
+│   ├── 1.pt
+│   └── ...
+├── writer_002/
+│   └── ...
+```
+The number of latent files in each writer folder must match the number of lines in `labels.txt`; mismatched writers are skipped automatically with a warning. Latents should be pre-encoded with the same VAE used everywhere else in the pipeline (`--vae_path`) so encoding is consistent between training and inference.
+
+`--style_base_dir` follows a similar per-writer layout, but with raw style **images** (not latents) — these are sampled during training to produce qualitative preview generations, and at inference time via `--style_folder`.
+
+## Technologies Used
+
+![PyTorch](https://img.shields.io/badge/PyTorch-EE4C2C?style=for-the-badge&logo=pytorch&logoColor=white)
+![HuggingFace](https://img.shields.io/badge/🤗%20Diffusers-FFD21E?style=for-the-badge)
+![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)
+![Colab](https://img.shields.io/badge/Google%20Colab-F9AB00?style=for-the-badge&logo=googlecolab&logoColor=white)
+
+- **PyTorch** — core deep learning framework
+- **🤗 Diffusers** — pretrained VAE (`AutoencoderKL`) for latent encoding/decoding
+- **Torchvision** — MobileNetV2 backbones for the style and content encoders
+- **Pillow (+ RAQM)** — Devanagari font rendering with correct matra/conjunct shaping
+- **indic_transliteration** — English (ITRANS) → Devanagari text transliteration
+- **tqdm / Matplotlib** — training progress and loss-curve visualization
+- **Hugging Face Hub & Spaces** — checkpoint hosting and the live CPU demo
+- **Google Colab** — free-GPU inference notebook
+
+## Team
+
+**Kishan Madlani (Keysun)**
+GitHub: [@keysun8](https://github.com/keysun8) · Hugging Face: [@keysun89](https://huggingface.co/keysun89)
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
+
+## Credits
+
+- [Denoising Diffusion Probabilistic Models (Ho et al., 2020)](https://arxiv.org/abs/2006.11239) — foundational DDPM formulation used for the noise schedule and training objective
+- [High-Resolution Image Synthesis with Latent Diffusion Models (Rombach et al., 2022)](https://arxiv.org/abs/2112.10752) — latent diffusion approach this project builds on
+- [Beyond Isolated Words: Diffusion Brush for Handwritten Text-Line Generation (Dai et al., ICCV 2025)](https://arxiv.org/abs/2508.03256) — the content-decoupled style learning strategy (column/row masking, vertical + horizontal style branches) this project's style encoder is directly based on
+- [MobileNetV2: Inverted Residuals and Linear Bottlenecks (Sandler et al., 2018)](https://arxiv.org/abs/1801.04381) — backbone architecture used in the style and content encoders
+- [indic_transliteration](https://github.com/indic-transliteration/indic_transliteration_py) — ITRANS ↔ Devanagari transliteration library
