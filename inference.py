@@ -1,16 +1,3 @@
-"""
-inference.py
-Standalone inference for the DiffBrush-style Devanagari handwriting model.
-
-Usage:
-    python infereence_diffbrush.py \
-        --ckpt /home/kishan/diffusion/diff_checkpoints_5/ckpt_epoch_579.pt \
-        --style_folder /home/kishan/diffusion/output_dataset_hindi_with_json_line_64*1024/train/3 \
-        --out_dir ./inference_out \
-        --font_path /home/kishan/diffusion/font/NotoSansDevanagari-Regular.ttf \
-        --vae_path /home/kishan/diffusion/vae
-"""
-
 import os
 import argparse
 import random
@@ -25,14 +12,11 @@ from torchvision.utils import save_image
 from indic_transliteration import sanscript
 from indic_transliteration.sanscript import transliterate
 
-from updated_diff_brush import (   
-    Diffusion,
-    TIMESTEPS,
-    alphas,
-    alpha_bars,
-    betas,
-    device,
-)
+from Model.diffusion import Diffusion
+from utills.diffusion_utills import TIMESTEPS, get_diffusion_schedules
+
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+betas, alphas, alpha_bars, sqrt_ab, sqrt_one_minus_ab = get_diffusion_schedules(device)
 
 IMG_EXTS = (".png", ".jpg", ".jpeg", ".bmp")
 
