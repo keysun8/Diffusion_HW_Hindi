@@ -4,6 +4,7 @@ A DiffBrush-style latent diffusion model that generates realistic **Devanagari (
 
 ## Table of Content
   * [Demo](#-demo)
+  * [Upcoming](#upcoming)
   * [Overview](#overview)
   * [Motivation](#motivation)
   * [Technical Aspect](#technical-aspect)
@@ -39,6 +40,10 @@ Runs the same inference pipeline on a free Colab GPU. Clones this repo, download
 <p align="center">
   <em>Same text, rendered in different writers' handwriting styles by the diffusion model.</em>
 </p>
+
+## Upcoming
+
+- **English handwriting generation** — extending the same style/content-decoupled diffusion pipeline to English text, alongside the existing Devanagari model.
 
 ## Overview
 
@@ -78,12 +83,12 @@ Evaluated on the training split of writers:
 ### Sample Generations
 
 <p align="center">
-  <img src="https://github.com/keysun8/Diffusion_HW_Hindi/blob/main/Hindi_HW_Imgs/Train_Imgs/3_train/10.jpg" alt="Generated samples — train writers" width="700">
+  <img src="https://github.com/keysun8/Diffusion_HW_Hindi/raw/main/assets/train_samples.png" alt="Generated samples — train writers" width="700">
 </p>
 <p align="center"><em>Generated handwriting conditioned on writers seen during training.</em></p>
 
 <p align="center">
-  <img src="https://github.com/keysun8/Diffusion_HW_Hindi/blob/main/Hindi_HW_Imgs/Test-Imgs/3_test/11.jpg" alt="Generated samples — test writers" width="700">
+  <img src="https://github.com/keysun8/Diffusion_HW_Hindi/raw/main/assets/test_samples.png" alt="Generated samples — test writers" width="700">
 </p>
 <p align="center"><em>Generated handwriting conditioned on held-out (unseen) test writers.</em></p>
 
