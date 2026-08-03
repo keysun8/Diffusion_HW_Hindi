@@ -7,6 +7,8 @@ A DiffBrush-style latent diffusion model that generates realistic **Devanagari (
   * [Overview](#overview)
   * [Motivation](#motivation)
   * [Technical Aspect](#technical-aspect)
+  * [Results](#results)
+  * [Training Strategy](#training-strategy)
   * [Installation](#installation)
   * [Inference](#inference)
   * [Pretrained Weights](#pretrained-weights)
@@ -57,6 +59,37 @@ Most handwriting-generation research targets English or Chinese scripts. Devanag
 - **Losses:** Standard DDPM noise-prediction MSE for the diffusion objective, plus three auxiliary Proxy-NCA losses (vertical style, horizontal style, global) so writer identity is explicitly discriminative in the learned embedding space.
 - **Latent space:** All diffusion happens in a pretrained VAE's latent space (not pixel space), keeping training and sampling compute-efficient.
 - **Sampling:** Standard ancestral DDPM denoising over the full 1000-step schedule, followed by VAE decoding back to an RGB image.
+
+## Results
+
+### Quantitative Metrics
+
+Evaluated on the training split of writers:
+
+| Metric | Train |
+|---|---|
+| HWD ↓ | 0.9698 |
+| FID ↓ | 17.00 |
+| IS ↑ | 2.24 ± 0.03 |
+| GS ↓ | 0.0000913* |
+
+*(↓ lower is better, ↑ higher is better)*
+
+### Sample Generations
+
+<p align="center">
+  <img src="https://github.com/keysun8/Diffusion_HW_Hindi/raw/main/assets/train_samples.png" alt="Generated samples — train writers" width="700">
+</p>
+<p align="center"><em>Generated handwriting conditioned on writers seen during training.</em></p>
+
+<p align="center">
+  <img src="https://github.com/keysun8/Diffusion_HW_Hindi/raw/main/assets/test_samples.png" alt="Generated samples — test writers" width="700">
+</p>
+<p align="center"><em>Generated handwriting conditioned on held-out (unseen) test writers.</em></p>
+
+## Training Strategy
+
+_(Add your training strategy notes here.)_
 
 ## Installation
 
@@ -178,6 +211,8 @@ The number of latent files in each writer folder must match the number of lines 
 
 `--style_base_dir` follows a similar per-writer layout, but with raw style **images** (not latents) — these are sampled during training to produce qualitative preview generations, and at inference time via `--style_folder`.
 
+> **Note:** The released model was trained on **900 unique writers**. This repo only includes a small subset of writer folders (under the style-images / sample data path) so people can run inference and see the expected folder structure — it is **not** the full training set.
+
 ## Technologies Used
 
 ![PyTorch](https://img.shields.io/badge/PyTorch-EE4C2C?style=for-the-badge&logo=pytorch&logoColor=white)
@@ -185,6 +220,9 @@ The number of latent files in each writer folder must match the number of lines 
 ![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)
 ![Colab](https://img.shields.io/badge/Google%20Colab-F9AB00?style=for-the-badge&logo=googlecolab&logoColor=white)
 
+- **Deep Learning** — CNN and attention-based architectures (MobileNetV2, UNet, transformer-style self/cross-attention)
+- **Diffusion Models** — DDPM-based forward/reverse noise process for image generation
+- **Neural Network Training** — mixed-precision (AMP) training, gradient clipping, dual optimizers with per-module learning rates, and metric learning (Proxy-NCA)
 - **PyTorch** — core deep learning framework
 - **🤗 Diffusers** — pretrained VAE (`AutoencoderKL`) for latent encoding/decoding
 - **Torchvision** — MobileNetV2 backbones for the style and content encoders
@@ -210,3 +248,4 @@ This project is licensed under the [MIT License](LICENSE).
 - [Beyond Isolated Words: Diffusion Brush for Handwritten Text-Line Generation (Dai et al., ICCV 2025)](https://arxiv.org/abs/2508.03256) — the content-decoupled style learning strategy (column/row masking, vertical + horizontal style branches) this project's style encoder is directly based on
 - [MobileNetV2: Inverted Residuals and Linear Bottlenecks (Sandler et al., 2018)](https://arxiv.org/abs/1801.04381) — backbone architecture used in the style and content encoders
 - [indic_transliteration](https://github.com/indic-transliteration/indic_transliteration_py) — ITRANS ↔ Devanagari transliteration library
+- **CVIT Lab, IIIT Hyderabad** — model trained using GPU compute provided by the Centre for Visual Information Technology (CVIT) server
