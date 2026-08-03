@@ -1,5 +1,3 @@
-# Diffusion_HW_Hindi
-
 # Diffusion_HW_Hindi — Devanagari Handwriting Generation
 
 A DiffBrush-style latent diffusion model that generates realistic **Devanagari (Hindi) handwriting** in a target writer's style from arbitrary input text.
