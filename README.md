@@ -35,7 +35,7 @@ Runs on free CPU hardware, so a single generation (1000 denoising steps) can tak
 Runs the same inference pipeline on a free Colab GPU. Clones this repo, downloads the checkpoint and VAE automatically, and lets you type any English (auto-transliterated) or Devanagari text.
 
 <p align="center">
-  <img src="https://github.com/keysun8/Diffusion_HW_Hindi/raw/main/assets/demo.png" alt="Devanagari Handwriting Generation Demo" width="700">
+  <img src="https://github.com/keysun8/Diffusion_HW_Hindi/blob/main/HF_DEMO.png" alt="Devanagari Handwriting Generation Demo" width="700">
 </p>
 <p align="center">
   <em>Same text, rendered in different writers' handwriting styles by the diffusion model.</em>
@@ -83,12 +83,12 @@ Evaluated on the training split of writers:
 ### Sample Generations
 
 <p align="center">
-  <img src="https://github.com/keysun8/Diffusion_HW_Hindi/raw/main/assets/train_samples.png" alt="Generated samples — train writers" width="700">
+  <img src="https://github.com/keysun8/Diffusion_HW_Hindi/blob/main/Hindi_HW_Imgs/Train_Imgs/3_train/10.jpg" alt="Generated samples — train writers" width="700">
 </p>
 <p align="center"><em>Generated handwriting conditioned on writers seen during training.</em></p>
 
 <p align="center">
-  <img src="https://github.com/keysun8/Diffusion_HW_Hindi/raw/main/assets/test_samples.png" alt="Generated samples — test writers" width="700">
+  <img src="https://github.com/keysun8/Diffusion_HW_Hindi/blob/main/Hindi_HW_Imgs/Test-Imgs/3_test/11.jpg" alt="Generated samples — test writers" width="700">
 </p>
 <p align="center"><em>Generated handwriting conditioned on held-out (unseen) test writers.</em></p>
 
