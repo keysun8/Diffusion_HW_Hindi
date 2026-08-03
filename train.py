@@ -6,9 +6,9 @@ from torch.amp import GradScaler, autocast
 import matplotlib.pyplot as plt
 import torchvision.transforms as transforms
 
-from models.diffusion import Diffusion, ProxyNCALoss
-from utils.dataset import HandwritingProxyNCALatentDataset
-from utils.diffusion_utils import get_diffusion_schedules, forward_diffusion, ddim_sample
+from Model.diffusion import Diffusion, ProxyNCALoss
+from utills.dataset import HandwritingProxyNCALatentDataset
+from utills.diffusion_utills import get_diffusion_schedules, forward_diffusion, ddim_sample
 
 
 def parse_args():
