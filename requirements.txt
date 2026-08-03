@@ -1,0 +1,10 @@
+torch>=2.1.0
+torchvision
+diffusers
+transformers
+pil-raqm
+pillow
+matplotlib
+tqdm
+torchmetrics
+accelerate
