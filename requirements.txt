@@ -1,10 +1,8 @@
 torch>=2.1.0
-torchvision
-diffusers
-transformers
-pil-raqm
-pillow
-matplotlib
-tqdm
-torchmetrics
-accelerate
+torchvision>=0.16.0
+numpy>=1.24.0
+matplotlib>=3.7.0
+Pillow>=10.0.0
+tqdm>=4.65.0
+diffusers>=0.27.0
+indic-transliteration>=2.3.0
