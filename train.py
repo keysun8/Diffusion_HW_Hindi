@@ -26,7 +26,85 @@ def parse_args():
     parser.add_argument("--vae_path", type=str, required=True,
                          help="Path or HF repo id of the VAE used to encode your latents (must match "
                               "the VAE used during latent pre-encoding, NOT a generic stock VAE)")
+    parser.add_argument("--resume_ckpt", type=str, default=None,
+                         help="Path to a checkpoint (.pt) to resume training from, including ones "
+                              "saved by the old pre-refactor training script.")
     return parser.parse_args()
+
+
+def _load_partial(module, state_dict, name):
+    """strict=False load -- tolerates checkpoints missing/extra keys (e.g.
+    pos_embed added later to ContentEncoder). Prints what didn't match."""
+    result = module.load_state_dict(state_dict, strict=False)
+    if result.missing_keys:
+        print(f"[RESUME][{name}] missing keys (kept freshly-initialized): {result.missing_keys}")
+    if result.unexpected_keys:
+        print(f"[RESUME][{name}] unexpected keys in ckpt (ignored): {result.unexpected_keys}")
+
+
+def load_checkpoint_for_resume(ckpt_path, model, proxy_losses, opt_style, opt_diff,
+                                scaler_style, scaler_diff, device):
+    """Resumes from a checkpoint saved by either this train.py OR the old
+    pre-refactor monolithic script (key names differ slightly between the
+    two: e.g. 'ver_proxy_loss' vs 'ver_proxy', 'optimizer_diffusion' vs
+    'opt_diff'). Model weights always load; optimizer state loads on a
+    best-effort basis and falls back to a fresh optimizer if the param
+    structure doesn't line up (e.g. the old script used a per-module LR
+    split that this version doesn't)."""
+    ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
+
+    _load_partial(model.style_encoder, ckpt["style_encoder"], "style_encoder")
+    _load_partial(model.content_encoder, ckpt["content_encoder"], "content_encoder")
+    _load_partial(model.blender, ckpt["blender"], "blender")
+    _load_partial(model.unet, ckpt["unet"], "unet")
+    _load_partial(model.final, ckpt["final"], "final")
+    if "embedding_head" in ckpt:
+        _load_partial(model.embedding_head, ckpt["embedding_head"], "embedding_head")
+
+    # Proxy-NCA losses: old checkpoints used *_proxy_loss, new ones use *_proxy
+    ver_key = "ver_proxy_loss" if "ver_proxy_loss" in ckpt else "ver_proxy"
+    hor_key = "hor_proxy_loss" if "hor_proxy_loss" in ckpt else "hor_proxy"
+    glob_key = "global_proxy_loss" if "global_proxy_loss" in ckpt else "global_proxy"
+    if ver_key in ckpt:
+        proxy_losses["ver"].load_state_dict(ckpt[ver_key])
+    if hor_key in ckpt:
+        proxy_losses["hor"].load_state_dict(ckpt[hor_key])
+    if glob_key in ckpt:
+        proxy_losses["global"].load_state_dict(ckpt[glob_key])
+
+    # Style optimizer/scaler: param structure is unchanged across versions,
+    # so this should always load cleanly.
+    opt_style_key = "optimizer_style" if "optimizer_style" in ckpt else "opt_style"
+    try:
+        opt_style.load_state_dict(ckpt[opt_style_key])
+    except Exception as e:
+        print(f"[RESUME] opt_style NOT loaded ({e}); starting fresh for that optimizer.")
+
+    if "scaler_style" in ckpt:
+        scaler_style.load_state_dict(ckpt["scaler_style"])
+
+    scaler_diff_key = "scaler_diff" if "scaler_diff" in ckpt else "scaler_diffusion"
+    if scaler_diff_key in ckpt:
+        scaler_diff.load_state_dict(ckpt[scaler_diff_key])
+
+    # Diffusion optimizer: the old script split content_encoder/blender vs.
+    # unet into separate LR groups; this version uses one flat LR. If the
+    # flattened parameter order doesn't match, just reinit fresh -- model
+    # weights above are already restored either way.
+    opt_diff_key = "optimizer_diffusion" if "optimizer_diffusion" in ckpt else "opt_diff"
+    try:
+        opt_diff.load_state_dict(ckpt[opt_diff_key])
+        print("[RESUME] opt_diff loaded from checkpoint.")
+    except Exception as e:
+        print(f"[RESUME] opt_diff NOT loaded ({e}); starting fresh (model weights still restored).")
+
+    start_epoch = ckpt["epoch"] + 1
+    loss_history = ckpt.get("loss_history", {
+        "diffusion_mse": [], "style_ver_nca": [], "style_hor_nca": [], "global_nca": [],
+    })
+    print(f"[RESUME] checkpoint epoch {ckpt['epoch']} loaded from {ckpt_path}, "
+          f"resuming at epoch {start_epoch}")
+    return start_epoch, loss_history
 
 
 def save_checkpoint(epoch, model, proxy_losses, opt_style, opt_diff, scaler_style, scaler_diff, history, path):
@@ -171,10 +249,20 @@ def train():
 
     _, _, _, sqrt_ab, sqrt_one_minus_ab = get_diffusion_schedules(device)
     loss_history = {"diffusion_mse": [], "style_ver_nca": [], "style_hor_nca": [], "global_nca": []}
+    start_epoch = 1
+
+    if args.resume_ckpt is not None:
+        start_epoch, loss_history = load_checkpoint_for_resume(
+            args.resume_ckpt, model, proxy_losses, opt_style, opt_diff,
+            scaler_style, scaler_diff, device,
+        )
+        if start_epoch > args.epochs:
+            print(f"[RESUME] start_epoch ({start_epoch}) > --epochs ({args.epochs}) "
+                  f"-- nothing to train, increase --epochs.")
 
     fixed_sample_batch = None
 
-    for epoch in range(1, args.epochs + 1):
+    for epoch in range(start_epoch, args.epochs + 1):
         model.train()
         total_mse, total_v, total_h, total_g = 0.0, 0.0, 0.0, 0.0
 
