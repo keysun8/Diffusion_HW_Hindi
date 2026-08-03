@@ -1,4 +1,7 @@
-# Building blocks (unchanged from your version)
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torchvision.models import mobilenet_v2, MobileNet_V2_Weights
 
 class Resblock(nn.Module):
     def __init__(self, in_channels, out_channels):
@@ -29,42 +32,9 @@ class Resblock(nn.Module):
         return x + self.residual_layer(residual)
 
 
-class StyleBackbone(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.net = nn.Sequential(
-            nn.Conv2d(3, 128, kernel_size=3, padding=1),
-            Resblock(128, 128), Resblock(128, 128),
-            nn.Conv2d(128, 128, kernel_size=3, padding=1, stride=2),
-            Resblock(128, 256), Resblock(256, 256),
-            nn.Conv2d(256, 256, kernel_size=3, padding=1, stride=2),
-            Resblock(256, 512), Resblock(512, 512),
-            nn.Conv2d(512, 512, kernel_size=3, padding=1, stride=2),
-            Resblock(512, 512), Resblock(512, 512),
-        )
-
-    def forward(self, x):
-        return self.net(x)
-
-
-# Column / row masking -- gated on self.training, not requires_grad
-
-def column_mask(feat_map, p=0.5):
-    b, c, h, w = feat_map.shape
-    mask = (torch.rand(b, 1, 1, w, device=feat_map.device) > p).float()
-    return feat_map * mask
-
-
-def row_mask(feat_map, p=0.5):
-    b, c, h, w = feat_map.shape
-    mask = (torch.rand(b, 1, h, 1, device=feat_map.device) > p).float()
-    return feat_map * mask
-
 class SelfAttentionBlock(nn.Module):
-    """A purely self-attention block for feature extractors (no cross-attention condition needed)."""
     def __init__(self, channels):
         super().__init__()
-        # Use 32 groups if channels >= 32, otherwise use channels
         groups = min(32, channels) if channels >= 8 else channels
         self.norm = nn.GroupNorm(groups, channels)
         self.attn = SelfAttention(channels)
@@ -72,7 +42,29 @@ class SelfAttentionBlock(nn.Module):
     def forward(self, x):
         return x + self.attn(self.norm(x))
 
-# Ver_Style / Hor_Style:  these feed the Blender
+
+class SelfAttention(nn.Module):
+    def __init__(self, channels, n_heads=8):
+        super().__init__()
+        self.n_heads = n_heads
+        self.d_head = channels // n_heads
+        self.qkv = nn.Linear(channels, channels * 3)
+        self.proj = nn.Linear(channels, channels)
+
+    def forward(self, x):
+        b, c, h, w = x.shape
+        x_flat = x.view(b, c, h * w).transpose(1, 2)
+        qkv = self.qkv(x_flat)
+        q, k, v = qkv.chunk(3, dim=-1)
+        q = q.view(b, -1, self.n_heads, self.d_head).transpose(1, 2)
+        k = k.view(b, -1, self.n_heads, self.d_head).transpose(1, 2)
+        v = v.view(b, -1, self.n_heads, self.d_head).transpose(1, 2)
+        attn = torch.softmax(q @ k.transpose(-1, -2) / (self.d_head ** 0.5), dim=-1)
+        out = attn @ v
+        out = out.transpose(1, 2).reshape(b, h * w, c)
+        out = self.proj(out)
+        return out.transpose(1, 2).reshape(b, c, h, w)
+
 
 class Ver_Style(nn.Module):
     def __init__(self):
@@ -80,7 +72,6 @@ class Ver_Style(nn.Module):
         self.conv1 = nn.Conv2d(512, 256, kernel_size=3, padding=1)
         self.res1 = Resblock(256, 256)
         self.res2 = Resblock(256, 64)
-        # CHANGED: Use pure self-attention
         self.attn1 = SelfAttentionBlock(64)
         self.attn2 = SelfAttentionBlock(64)
         self.attn3 = SelfAttentionBlock(64)
@@ -96,13 +87,13 @@ class Ver_Style(nn.Module):
         x = self.res3(x)
         return x
 
+
 class Hor_Style(nn.Module):
     def __init__(self):
         super().__init__()
         self.conv1 = nn.Conv2d(512, 256, kernel_size=3, padding=1)
         self.res1 = Resblock(256, 256)
         self.res2 = Resblock(256, 64)
-        # CHANGED: Use pure self-attention
         self.attn1 = SelfAttentionBlock(64)
         self.attn2 = SelfAttentionBlock(64)
         self.attn3 = SelfAttentionBlock(64)
@@ -138,7 +129,7 @@ class StyleProxyHead(nn.Module):
                 keep = (torch.rand(b, 1, h, 1, device=x.device) > self.mask_ratio).float()
             x = x * keep
             denom = keep.sum(dim=(2, 3), keepdim=True).clamp(min=1.0)
-            x = x.sum(dim=(2, 3), keepdim=True) / denom   # true mean over kept entries
+            x = x.sum(dim=(2, 3), keepdim=True) / denom
         else:
             x = self.pool(x)
         x = x.flatten(1)
@@ -146,14 +137,11 @@ class StyleProxyHead(nn.Module):
         return F.normalize(x, p=2, dim=1)
 
 
-from torchvision.models import mobilenet_v2, MobileNet_V2_Weights
-
-
 class MobileNetStride8Backbone(nn.Module):
     def __init__(self, out_channels=512):
         super().__init__()
         mnet = mobilenet_v2(weights=MobileNet_V2_Weights.DEFAULT)
-        self.features = mnet.features[:7]        # cumulative stride 8
+        self.features = mnet.features[:7]
         self.project = nn.Conv2d(32, out_channels, kernel_size=1)
 
     def forward(self, x):
@@ -175,10 +163,8 @@ class StyleEncoder(nn.Module):
 
     def forward(self, x):
         feat = self.backbone(x)
-
         ver_map = self.ver(feat)
         hor_map = self.hor(feat)
-
         ver_emb = self.ver_proxy_head(ver_map)
         hor_emb = self.hor_proxy_head(hor_map)
 
