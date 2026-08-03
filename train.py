@@ -4,7 +4,6 @@ import torch
 from torch.utils.data import DataLoader
 from torch.amp import GradScaler, autocast
 import matplotlib.pyplot as plt
-from PIL import Image
 import torchvision.transforms as transforms
 
 from models.diffusion import Diffusion, ProxyNCALoss
@@ -87,7 +86,6 @@ def generate_and_save_samples(model, sample_batch, epoch, sample_dir, device):
             ddim_steps=20
         )
 
-        # Try loading SD-VAE to render image if diffusers installed
         try:
             from diffusers import AutoencoderKL
             vae = AutoencoderKL.from_pretrained("stabilityai/sd-vae-ft-mse").to(device)
@@ -99,9 +97,8 @@ def generate_and_save_samples(model, sample_batch, epoch, sample_dir, device):
                 img = save_tf(decoded[i].cpu())
                 out_path = os.path.join(sample_dir, f"epoch_{epoch}_sample_{i}.png")
                 img.save(out_path)
-            print(f"[SAMPLES] Rendered and saved samples to '{sample_dir}/'")
+            print(f"[SAMPLES] Rendered sample images saved to '{sample_dir}/'")
         except Exception:
-            # Fallback: Save latent visualization directly
             for i in range(sampled_latents.shape[0]):
                 latent_vis = sampled_latents[i, :3].cpu().clamp(-1, 1)
                 latent_vis = (latent_vis + 1) / 2
@@ -119,7 +116,7 @@ def train():
     os.makedirs(args.ckpt_dir, exist_ok=True)
     os.makedirs(args.sample_dir, exist_ok=True)
 
-    print(f"--- Launching Training ---")
+    print("--- Launching Training ---")
     print(f"Data Root Latents (.pt): {args.data_root_pt}")
     print(f"Data Root Images  (.jpg): {args.data_root_jpg}")
     print(f"Checkpoint Directory:    {args.ckpt_dir}")
@@ -128,7 +125,6 @@ def train():
     print(f"Batch Size:              {args.batch_size}")
     print(f"Device:                  {device}\n")
 
-    # Dataset & DataLoader
     dataset = HandwritingProxyNCALatentDataset(
         data_root_pt=args.data_root_pt,
         data_root_jpg=args.data_root_jpg
@@ -192,7 +188,7 @@ def train():
 
             noisy_latents, noise = forward_diffusion(latents, t, sqrt_ab, sqrt_one_minus_ab)
 
-            # --- 1. Style Encoder Step ---
+            # 1. Style Step
             opt_style.zero_grad()
             with autocast('cuda' if device.type == 'cuda' else 'cpu'):
                 _, _, ver_emb, hor_emb, _ = model.style_encoder(style_imgs)
@@ -204,7 +200,7 @@ def train():
             scaler_style.step(opt_style)
             scaler_style.update()
 
-            # --- 2. Diffusion Step ---
+            # 2. Diffusion Step
             opt_diff.zero_grad()
             with autocast('cuda' if device.type == 'cuda' else 'cpu'):
                 pred_noise, glob_emb, _, _, _ = model(noisy_latents, style_imgs, texts, t)
@@ -234,7 +230,6 @@ def train():
 
         print(f"Epoch [{epoch}/{args.epochs}] | MSE Loss: {avg_mse:.4f} | Style (V/H): {avg_v:.3f}/{avg_h:.3f} | Global: {avg_g:.3f}")
 
-        # Save checkpoint, generate samples, plot loss curves
         if epoch % args.save_every == 0 or epoch == args.epochs:
             save_checkpoint(epoch, model, proxy_losses, opt_style, opt_diff, scaler_style, scaler_diff, loss_history, args.ckpt_dir)
             plot_losses(loss_history, os.path.join(args.sample_dir, "loss_curves.png"))
