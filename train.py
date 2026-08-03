@@ -6,9 +6,9 @@ from torch.amp import GradScaler, autocast
 import matplotlib.pyplot as plt
 import torchvision.transforms as transforms
 
-from Model.diffusion import Diffusion, ProxyNCALoss
-from utills.dataset import HandwritingProxyNCALatentDataset
-from utills.diffusion_utills import get_diffusion_schedules, forward_diffusion, ddim_sample
+from models.diffusion import Diffusion, ProxyNCALoss
+from utils.dataset import HandwritingProxyNCALatentDataset
+from utils.diffusion_utils import get_diffusion_schedules, forward_diffusion, ddim_sample
 
 
 def parse_args():
@@ -23,6 +23,9 @@ def parse_args():
     parser.add_argument("--save_every", type=int, default=5, help="Save checkpoint and samples every N epochs")
     parser.add_argument("--num_workers", type=int, default=4, help="DataLoader num workers")
     parser.add_argument("--font_path", type=str, default="NotoSansDevanagari-Regular.ttf", help="Path to Devanagari font")
+    parser.add_argument("--vae_path", type=str, required=True,
+                         help="Path or HF repo id of the VAE used to encode your latents (must match "
+                              "the VAE used during latent pre-encoding, NOT a generic stock VAE)")
     return parser.parse_args()
 
 
@@ -68,7 +71,7 @@ def plot_losses(loss_history, out_path):
     plt.close()
 
 
-def generate_and_save_samples(model, sample_batch, epoch, sample_dir, device):
+def generate_and_save_samples(model, sample_batch, epoch, sample_dir, device, vae_path):
     os.makedirs(sample_dir, exist_ok=True)
     model.eval()
 
@@ -88,7 +91,7 @@ def generate_and_save_samples(model, sample_batch, epoch, sample_dir, device):
 
         try:
             from diffusers import AutoencoderKL
-            vae = AutoencoderKL.from_pretrained("stabilityai/sd-vae-ft-mse").to(device)
+            vae = AutoencoderKL.from_pretrained(vae_path).to(device)
             decoded = vae.decode(sampled_latents / 0.18215).sample
             decoded = (decoded / 2 + 0.5).clamp(0, 1)
 
@@ -234,7 +237,7 @@ def train():
             save_checkpoint(epoch, model, proxy_losses, opt_style, opt_diff, scaler_style, scaler_diff, loss_history, args.ckpt_dir)
             plot_losses(loss_history, os.path.join(args.sample_dir, "loss_curves.png"))
             if fixed_sample_batch is not None:
-                generate_and_save_samples(model, fixed_sample_batch, epoch, args.sample_dir, device)
+                generate_and_save_samples(model, fixed_sample_batch, epoch, args.sample_dir, device, args.vae_path)
 
 
 if __name__ == "__main__":
