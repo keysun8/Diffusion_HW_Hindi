@@ -3,7 +3,7 @@ inference.py
 Standalone inference for the DiffBrush-style Devanagari handwriting model.
 
 Usage:
-    python infereence_diffbrush.py \
+    python inference.py \
         --ckpt /home/kishan/diffusion/diff_checkpoints_5/ckpt_epoch_579.pt \
         --style_folder /home/kishan/diffusion/output_dataset_hindi_with_json_line_64*1024/train/3 \
         --out_dir ./inference_out \
@@ -25,11 +25,14 @@ from torchvision.utils import save_image
 from indic_transliteration import sanscript
 from indic_transliteration.sanscript import transliterate
 
-from models.diffusion import Diffusion
-from utils.diffusion_utils import TIMESTEPS, get_diffusion_schedules
-
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-betas, alphas, alpha_bars, sqrt_ab, sqrt_one_minus_ab = get_diffusion_schedules(device)
+from train import (
+    Diffusion,
+    TIMESTEPS,
+    alphas,
+    alpha_bars,
+    betas,
+    device,
+)
 
 IMG_EXTS = (".png", ".jpg", ".jpeg", ".bmp")
 
@@ -119,8 +122,8 @@ def generate(model, vae, style_img_path, text, out_path, img_size=(64, 1024), se
     return out_path
 
 
-def main():
-    parser = argparse.ArgumentParser()
+def parse_args():
+    parser = argparse.ArgumentParser(description="Run inference for the DiffBrush-style handwriting model")
     parser.add_argument("--ckpt", required=True, help="Path to checkpoint .pt file")
     parser.add_argument("--style_folder", required=True, help="Folder with style images")
     parser.add_argument("--style_image", default=None, help="Specific style image path")
@@ -129,8 +132,14 @@ def main():
     parser.add_argument("--out_name", default=None, help="Output filename")
     parser.add_argument("--font_path", default="/home/kishan/diffusion/NotoSansDevanagari-Regular.ttf")
     parser.add_argument("--vae_path", default="/home/kishan/diffusion/vae")
+    parser.add_argument("--img_height", type=int, default=64, help="Style image resize height")
+    parser.add_argument("--img_width", type=int, default=1024, help="Style image resize width")
     parser.add_argument("--seed", type=int, default=None)
-    args = parser.parse_args()
+    return parser.parse_args()
+
+
+def main():
+    args = parse_args()
 
     # Get input interactively if not provided via CLI
     hindi_text = args.text
@@ -162,10 +171,14 @@ def main():
         R = random.randint(1, 1000)
         print(f"Random number R generated: {R}")
         args.out_name = f"output_img_{R}.png"
-        
+
     out_path = os.path.join(args.out_dir, args.out_name)
 
-    generate(model, vae, style_img_path, hindi_text, out_path, seed=args.seed)
+    generate(
+        model, vae, style_img_path, hindi_text, out_path,
+        img_size=(args.img_height, args.img_width),
+        seed=args.seed,
+    )
 
 
 if __name__ == "__main__":
