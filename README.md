@@ -43,19 +43,19 @@ Runs the same inference pipeline on a free Colab GPU. Clones this repo, download
 
 ## Upcoming
 
-- **English handwriting generation** — extending the same style/content-decoupled diffusion pipeline to English text, alongside the existing Devanagari model.
+- **English handwriting generation** — Currently, the model is trained and released only for Hindi (Devanagari script). Over the next 1–2 weeks, I'll be releasing an English-language checkpoint trained on the same pipeline, along with updated weights and a demo on Hugging Face.
 
 ## Overview
 
-This project generates handwritten-style images of Devanagari text conditioned on **(a)** the text content and **(b)** a reference style image from a target writer. A style encoder splits a writer's handwriting into separate vertical and horizontal style representations, a content encoder renders the target text into a glyph-aware query, and a UNet-based latent diffusion model — conditioned on both through cross-attention — denoises a VAE latent that is decoded back into a full handwriting image.
+This project trains a Stable Diffusion–based latent diffusion model for style-conditioned Devanagari handwriting generation. Given a style reference image from any writer and an arbitrary input text, the model generates a new image of that text rendered in the same handwriting style — effectively letting the model "mimic" a person's handwriting on unseen content. A style encoder extracts writer-identity features from the reference image, a content encoder encodes the target text, and a UNet-based latent diffusion model conditioned on both denoises a VAE latent that is decoded into the final handwriting image.
 
 ## Motivation
 
-Most handwriting-generation research targets English or Chinese scripts. Devanagari is comparatively under-explored despite being far more structurally demanding: matras (vowel signs) attach above or below the baseline, consonant clusters form visually fused conjuncts, and correct rendering depends on proper glyph reordering and shaping rather than simple left-to-right character placement. This project adapts a DiffBrush-style content-decoupled diffusion approach — originally built for isolated words/Latin & Chinese scripts — to handle these Devanagari-specific challenges, while exploring writer-conditioned, style-controllable text-line generation as a step beyond static, uncontrollable generative demos like "This Person Does Not Exist."
+The motivation behind this project is twofold. First, the generated handwriting images can serve as a synthetic dataset — usable for downstream OCR training, where labeled handwriting data (especially in Hindi/Devanagari) is scarce and expensive to collect. Second, and more importantly, my primary goal was learning: understanding how style-content decoupled diffusion models work at a deep level. Alongside the core diffusion pipeline, I also experimented with a hybrid approach combining Autoregressive and Diffusion methods to compare generation quality and training dynamics. The same style-mimicking strategy is not limited to handwriting — it generalizes naturally to audio: given a reference audio sample of a person's voice and new text, a similar model could generate speech in that person's voice with the target content. The core learning here — decoupling "style/identity" from "content" and recombining them through diffusion — is the real takeaway of this project.
 
 ## Technical Aspect
 
-- **Framework:** Built entirely in PyTorch with a custom training loop (mixed-precision, gradient clipping, dual optimizers) — no high-level trainer abstraction.
+- **Framework:** The current implementation is built on a custom PyTorch training loop. I'm planning to migrate parts of the framework to improve modularity, training speed, and ease of experimentation — this includes revisiting the trainer abstraction and exploring more efficient sampling schedules going forward.
 - **Style Encoder:** A MobileNetV2 backbone feeds two parallel branches (`Ver_Style` / `Hor_Style`), each a stack of residual + self-attention blocks, producing full spatial vertical/horizontal style feature maps for conditioning, plus separately masked-and-pooled embeddings used only for metric learning.
 - **Content-decoupled style learning:** Column-wise and row-wise random masking (DiffBrush's core idea) is applied only inside the Proxy-NCA embedding heads — never on the maps that feed the diffusion conditioning — forcing the style embeddings to capture writer identity rather than the specific glyphs in the reference image.
 - **Content Encoder:** Renders input text to an image using a Devanagari TTF font (with RAQM shaping for correct matra/conjunct positioning), then encodes it through a MobileNetV2 backbone + learned positional embedding + self-attention stack into a content query `Q`.
@@ -93,8 +93,7 @@ Evaluated on the training split of writers:
 <p align="center"><em>Generated handwriting conditioned on held-out (unseen) test writers.</em></p>
 
 ## Training Strategy
-
-_(Add your training strategy notes here.)_
+The model was trained on approximately 900 unique writers, with around 25,000 sentence-level handwriting samples, using a dual-optimizer setup (style encoder trained via Proxy-NCA loss; content encoder + UNet trained via a combination of Proxy-NCA and MSE), mixed-precision training with gradient clipping, and per-module learning rates (content encoder/blender trained faster than the UNet). The final model achieved an FID of 17.00 and an HWD of 0.9698 on the training split, indicating strong visual fidelity and style consistency across writers.
 
 ## Installation
 
