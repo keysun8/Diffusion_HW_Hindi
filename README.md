@@ -28,7 +28,7 @@ Two ways to try the model — pick whichever fits what you need:
   <img align="right" src="https://huggingface.co/datasets/huggingface/brand-assets/resolve/main/hf-logo-with-title.png" width="150" alt="Try it on Hugging Face">
 </a>
 
-**1. Hugging Face Space** 👉 **[Launch Demo](https://huggingface.co/spaces/keysun89/HW_Hindi_Demo)**
+**1. Hugging Face Space** 👉 **[Launch Demo](https://huggingface.co/spaces/keysun89/HW_Hindi_Human)**
 Runs on free CPU hardware, so a single generation (1000 denoising steps) can take a couple of minutes — good for a quick, no-setup preview.
 
 **2. Google Colab (recommended — GPU, much faster)** 👉 **[Open In Colab](https://colab.research.google.com/github/keysun8/Diffusion_HW_Hindi/blob/main/Diffusion_HW_Inference_Hindi.ipynb)**
